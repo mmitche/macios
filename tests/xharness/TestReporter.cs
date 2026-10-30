@@ -114,6 +114,7 @@ namespace Xharness {
 					launchFailure = true;
 			} else {
 				string? line;
+				var simulatorPidPrefix = appInfo.BundleIdentifier + ": ";
 				while ((line = await reader.ReadLineAsync ()) is not null) {
 					if (line.StartsWith ("Application launched. PID = ", StringComparison.Ordinal)) {
 						var pidstr = line.Substring ("Application launched. PID = ".Length);
@@ -123,6 +124,13 @@ namespace Xharness {
 						var pidstr = line.Substring (line.LastIndexOf (' '));
 						if (!int.TryParse (pidstr, out pid))
 							mainLog.WriteLine ("Could not parse pid: {0}", pidstr);
+					} else if (line.Contains (simulatorPidPrefix, StringComparison.Ordinal)) {
+						var pidstr = line.Substring (line.IndexOf (simulatorPidPrefix, StringComparison.Ordinal) + simulatorPidPrefix.Length);
+						if (int.TryParse (pidstr, out var simulatorPid) && simulatorPid > 0) {
+							pid = simulatorPid;
+						} else {
+							mainLog.WriteLine ("Could not parse simulator pid: {0}", pidstr);
+						}
 					} else if (line.Contains ("error MT1008")) {
 						launchFailure = true;
 					}
