@@ -299,6 +299,13 @@ namespace Xharness.Jenkins {
 				Console.WriteLine ($"    DeviceNotFound: {Tasks.Count (v => v.DeviceNotFound)}");
 				Console.WriteLine ($"    NotStarted: {Tasks.Count (v => v.NotStarted)}");
 
+				foreach (var task in Tasks.Where (v => v.Failed || v.DeviceNotFound)) {
+					Console.WriteLine ($"    Failed task {task.ID}: {task.TestName} ({task.Platform} - {task.ProjectConfiguration} {task.Variation}): {task.ExecutionResult}");
+					if (!string.IsNullOrEmpty (task.FailureMessage))
+						Console.WriteLine ($"        {task.FailureMessage}");
+					Console.WriteLine ($"        Logs: {task.LogDirectory}");
+				}
+
 				return Tasks.Any ((v) => v.Failed || v.DeviceNotFound) ? 1 : 0;
 			} catch (Exception ex) {
 				MainLog.WriteLine ("Unexpected exception: {0}", ex);
