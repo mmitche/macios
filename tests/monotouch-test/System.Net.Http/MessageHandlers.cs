@@ -1313,7 +1313,7 @@ namespace MonoTests.System.Net.Http {
 			SslPolicyErrors sslPolicyErrors = SslPolicyErrors.None;
 			Exception ex = null;
 
-			var handler = new NSUrlSessionHandler {
+			using var handler = new NSUrlSessionHandler {
 				ServerCertificateCustomValidationCallback = (request, certificate, chain, errors) => {
 					callbackWasExecuted = true;
 					serverCertificate = certificate;
@@ -1326,44 +1326,49 @@ namespace MonoTests.System.Net.Http {
 
 			Assert.That (handler.CheckCertificateRevocationList, Is.True, "CheckCertificateRevocationList");
 
-			for (var i = 0; i < 3; i++) {
-				callbackWasExecuted = false;
-				result = null;
-				serverCertificate = null;
-				sslPolicyErrors = SslPolicyErrors.None;
+			using var client = new HttpClient (handler, disposeHandler: false);
+			// Disable keep-alive and cache to force reconnection for each request
+			client.DefaultRequestHeaders.ConnectionClose = true;
+			client.DefaultRequestHeaders.CacheControl = new CacheControlHeaderValue { NoCache = true, NoStore = true };
+			try {
+				for (var i = 0; i < 3; i++) {
+					callbackWasExecuted = false;
+					result?.Dispose ();
+					result = null;
+					serverCertificate = null;
+					sslPolicyErrors = SslPolicyErrors.None;
 
-				var done = TestRuntime.TryRunAsync (TimeSpan.FromSeconds (30), async () => {
-					using var client = new HttpClient (handler);
-					// Disable keep-alive and cache to force reconnection for each request
-					client.DefaultRequestHeaders.ConnectionClose = true;
-					client.DefaultRequestHeaders.CacheControl = new CacheControlHeaderValue { NoCache = true, NoStore = true };
-					result = await client.GetAsync (url);
-				}, out ex);
+					var done = TestRuntime.TryRunAsync (TimeSpan.FromSeconds (30), async () => {
+						result = await client.GetAsync (url, HttpCompletionOption.ResponseHeadersRead);
+					}, out ex);
 
-				if (!done) // timeouts happen in the bots due to dns issues, connection issues etc., we do not want to fail
-					Assert.Inconclusive ("Request timedout.");
+					if (!done) // timeouts happen in the bots due to dns issues, connection issues etc., we do not want to fail
+						Assert.Inconclusive ("Request timedout.");
 
-				if (callbackWasExecuted)
-					break;
+					if (callbackWasExecuted)
+						break;
 
-				TestRuntime.IgnoreInCIIfBadNetwork (ex);
-				if (result is not null)
-					TestRuntime.IgnoreInCIIfBadNetwork (result.StatusCode);
+					TestRuntime.IgnoreInCIIfBadNetwork (ex);
+					if (result is not null)
+						TestRuntime.IgnoreInCIIfBadNetwork (result.StatusCode);
 
-				if (ex is not null)
-					break;
-				if (result is null || !result.IsSuccessStatusCode)
-					break;
+					if (ex is not null)
+						break;
+					if (result is null || !result.IsSuccessStatusCode)
+						break;
+				}
+
+				if (!callbackWasExecuted)
+					Assert.Inconclusive ("Validation callback was not called.");
+
+				Assert.That (sslPolicyErrors, Is.EqualTo (expectedError), "Callback was called with unexpected SslPolicyErrors");
+				Assert.That (serverCertificate, Is.Not.Null, "Server certificate is null");
+				Assert.That (ex, Is.Null, "Exception wasn't expected.");
+				Assert.That (result, Is.Not.Null, "Result was null");
+				Assert.That (result.IsSuccessStatusCode, Is.True, $"Status code was not success: {result.StatusCode}");
+			} finally {
+				result?.Dispose ();
 			}
-
-			if (!callbackWasExecuted)
-				Assert.Inconclusive ("Validation callback was not called.");
-
-			Assert.That (sslPolicyErrors, Is.EqualTo (expectedError), "Callback was called with unexpected SslPolicyErrors");
-			Assert.That (serverCertificate, Is.Not.Null, "Server certificate is null");
-			Assert.That (ex, Is.Null, "Exception wasn't expected.");
-			Assert.That (result, Is.Not.Null, "Result was null");
-			Assert.That (result.IsSuccessStatusCode, Is.True, $"Status code was not success: {result.StatusCode}");
 		}
 	}
 }
