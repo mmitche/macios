@@ -301,7 +301,7 @@ namespace MonoTests.System.Net.Http {
 				if (serverTask.IsFaulted)
 					Assert.Fail ($"Server task failed: {serverTask.Exception}");
 			} finally {
-				httpListener.Stop ();
+				// Stop followed by Close can rebind the released port in the managed listener.
 				httpListener.Close ();
 			}
 		}
