@@ -299,7 +299,8 @@ namespace Xharness.Jenkins {
 				Console.WriteLine ($"    DeviceNotFound: {Tasks.Count (v => v.DeviceNotFound)}");
 				Console.WriteLine ($"    NotStarted: {Tasks.Count (v => v.NotStarted)}");
 
-				foreach (var task in Tasks.Where (v => v.Failed || v.DeviceNotFound)) {
+				var summaryTasks = Tasks.Concat (Tasks.OfType<AggregatedRunSimulatorTask> ().SelectMany (v => v.Tasks));
+				foreach (var task in summaryTasks.Where (v => v.Failed || v.DeviceNotFound)) {
 					Console.WriteLine ($"    Failed task {task.ID}: {task.TestName} ({task.Platform} - {task.ProjectConfiguration} {task.Variation}): {task.ExecutionResult}");
 					if (!string.IsNullOrEmpty (task.FailureMessage))
 						Console.WriteLine ($"        {task.FailureMessage}");
