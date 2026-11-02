@@ -6,6 +6,7 @@ using System.Xml;
 using Microsoft.DotNet.XHarness.iOS.Shared.Execution;
 using Microsoft.DotNet.XHarness.iOS.Shared.Logging;
 using Microsoft.DotNet.XHarness.iOS.Shared.Utilities;
+using Xamarin.Utils;
 
 namespace Xharness.Jenkins.TestTasks {
 	class DotNetTestTask : RunTestTask {
@@ -53,6 +54,19 @@ namespace Xharness.Jenkins.TestTasks {
 				WorkingDirectory = Path.GetDirectoryName (ProjectFile)!;
 
 				await ExecuteProcessAsync (Jenkins.Harness.GetDotNetExecutable (Path.GetDirectoryName (ProjectFile)!), args);
+
+				if (!Succeeded) {
+					Jenkins.MainLog.WriteLine ($"{TestName}: {FailureMessage}");
+					if (TrxParser.TryParseTrxFile (trx.FullPath, out var failedTests, out var outcome, out _, out var exception)) {
+						Jenkins.MainLog.WriteLine ($"TRX outcome: {outcome}; failed results: {failedTests.Count}");
+						foreach (var failure in failedTests) {
+							Jenkins.MainLog.WriteLine ($"[{failure.Outcome}] {failure.Name}");
+							Jenkins.MainLog.WriteLine (failure.Message);
+						}
+					} else {
+						Jenkins.MainLog.WriteLine ($"Could not read test results from '{trx.FullPath}': {exception?.Message ?? "No TRX file was produced."}");
+					}
+				}
 
 				try {
 					var xmlDoc = new XmlDocument ();
