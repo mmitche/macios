@@ -277,23 +277,29 @@ namespace Xharness {
 			ICrashSnapshotReporter crashReporter = snapshotReporterFactory.Create (MainLog, Logs, isDevice: !isSimulator, deviceName, AppInformation);
 
 			var testReporterTimeout = TimeSpan.FromMinutes (harness.Timeout * timeoutMultiplier);
-			var testReporter = testReporterFactory.Create (MainLog,
-				MainLog,
-				Logs,
-				crashReporter,
-				listener,
-				new XmlResultParser (),
-				AppInformation,
-				runMode,
-				harness.XmlJargon,
-				deviceName,
-				testReporterTimeout,
-				buildTask?.Logs?.Directory);
+			ITestReporter CreateTestReporter ()
+			{
+				var reporter = testReporterFactory.Create (MainLog,
+					MainLog,
+					Logs,
+					crashReporter,
+					listener,
+					new XmlResultParser (),
+					AppInformation,
+					runMode,
+					harness.XmlJargon,
+					deviceName,
+					testReporterTimeout,
+					buildTask?.Logs?.Directory);
 
-			listener.ConnectedTask
-				.TimeoutAfter (TimeSpan.FromMinutes (harness.LaunchTimeout))
-				.ContinueWith (testReporter.LaunchCallback)
-				.DoNotAwait ();
+				listener.ConnectedTask
+					.TimeoutAfter (TimeSpan.FromMinutes (harness.LaunchTimeout))
+					.ContinueWith (reporter.LaunchCallback)
+					.DoNotAwait ();
+
+				return reporter;
+			}
+			ITestReporter testReporter;
 
 			args.AddRange (harness.EnvironmentVariables.Select (kvp => new SetEnvVariableArgument (kvp.Key, kvp.Value)));
 
@@ -357,6 +363,8 @@ namespace Xharness {
 
 				await crashReporter.StartCaptureAsync ();
 
+				// Simulator preparation must not consume the app's launch or execution timeout.
+				testReporter = CreateTestReporter ();
 				MainLog.WriteLine ("Starting test run");
 
 				var testRunResult = await processManager.ExecuteCommandAsync (args, MainLog, testReporterTimeout, cancellationToken: testReporter.CancellationToken);
@@ -398,6 +406,7 @@ namespace Xharness {
 						await tunnel.Started;
 					}
 
+					testReporter = CreateTestReporter ();
 					// We need to check for MT1111 (which means that mlaunch won't wait for the app to exit).
 					var aggregatedLog = Log.CreateAggregatedLog (testReporter.CallbackLog, MainLog);
 					ProcessExecutionResult runTestResults = await processManager.ExecuteCommandAsync (
