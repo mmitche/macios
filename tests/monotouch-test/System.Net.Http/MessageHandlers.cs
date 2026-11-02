@@ -433,6 +433,7 @@ namespace MonoTests.System.Net.Http {
 			bool containsAuthorizarion = false;
 			bool containsHeaders = false;
 			string json = "";
+			var stopwatch = Stopwatch.StartNew ();
 
 			using var handler = GetHandler (handlerType);
 			var done = TestRuntime.TryRunAsync (TimeSpan.FromSeconds (30), async () => {
@@ -442,12 +443,17 @@ namespace MonoTests.System.Net.Http {
 				client.BaseAddress = NetworkResources.Httpbin.Uri;
 				var byteArray = new UTF8Encoding ().GetBytes ("username:password");
 				client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue ("Basic", Convert.ToBase64String (byteArray));
-				using var result = await client.GetAsync (NetworkResources.Httpbin.GetRedirectUrl (3));
+				var url = NetworkResources.Httpbin.GetRedirectUrl (3);
+				Console.WriteLine ($"Starting redirect request to {url} using {handlerType.Name} after {stopwatch.ElapsedMilliseconds} ms.");
+				using var result = await client.GetAsync (url);
+				Console.WriteLine ($"Received redirect response with status {(int) result.StatusCode} after {stopwatch.ElapsedMilliseconds} ms.");
 				// get the data returned from httpbin which contains the details of the requested performed.
 				json = await result.Content.ReadAsStringAsync ();
+				Console.WriteLine ($"Read redirect response body after {stopwatch.ElapsedMilliseconds} ms.");
 				containsAuthorizarion = json.Contains ("Authorization");
 				containsHeaders = json.Contains ("headers");  // ensure we do have the headers in the response
 			}, out var ex);
+			Console.WriteLine ($"Redirect request completed: done={done}, exception={ex?.GetType ().FullName ?? "<none>"}, elapsed={stopwatch.ElapsedMilliseconds} ms.");
 
 			Assert.That (done, Is.True, "Request completed");
 			Assert.That (ex, Is.Null, $"Exception {ex} for {json}");
@@ -479,7 +485,7 @@ namespace MonoTests.System.Net.Http {
 			}
 
 			using var client = new HttpClient (handler);
-			using var response = GetResponseWithTimeout (client, new Uri (server.OriginUri, "start"));
+			using var response = GetResponseWithTimeout (client, new Uri (server.OriginUri, "start"), server);
 
 			Assert.That (response.StatusCode, Is.EqualTo (expectedStatusCode), "StatusCode");
 			Assert.That (server.TargetRequestCount, Is.GreaterThanOrEqualTo (1), "Target request count");
@@ -504,7 +510,7 @@ namespace MonoTests.System.Net.Http {
 				};
 
 				using var client = new HttpClient (handler);
-				using var response = GetResponseWithTimeout (client, new Uri (server.OriginUri, "start"));
+				using var response = GetResponseWithTimeout (client, new Uri (server.OriginUri, "start"), server);
 
 				Assert.That (response.StatusCode, Is.EqualTo (expectedStatusCode), "StatusCode");
 				Assert.That (server.TargetRequestCount, Is.GreaterThanOrEqualTo (1), "Target request count");
@@ -537,7 +543,7 @@ namespace MonoTests.System.Net.Http {
 
 				using (var primingHandler = new NSUrlSessionHandler { Credentials = cache }) {
 					using var primingClient = new HttpClient (primingHandler);
-					using var primingResponse = GetResponseWithTimeout (primingClient, new Uri (server.OriginUri, "start"));
+					using var primingResponse = GetResponseWithTimeout (primingClient, new Uri (server.OriginUri, "start"), server);
 				}
 
 				// Record how many auth headers the server received from the priming request
@@ -553,7 +559,7 @@ namespace MonoTests.System.Net.Http {
 				};
 
 				using var client = new HttpClient (handler);
-				using var response = GetResponseWithTimeout (client, new Uri (server.OriginUri, "start"));
+				using var response = GetResponseWithTimeout (client, new Uri (server.OriginUri, "start"), server);
 
 				Assert.That (response.StatusCode, Is.EqualTo (expectedStatusCode), "StatusCode");
 
@@ -890,7 +896,7 @@ namespace MonoTests.System.Net.Http {
 			}
 		}
 
-		static HttpResponseMessage GetResponseWithTimeout (HttpClient client, Uri uri)
+		static HttpResponseMessage GetResponseWithTimeout (HttpClient client, Uri uri, RedirectBasicAuthServer server)
 		{
 			HttpResponseMessage? response = null;
 			var stopwatch = Stopwatch.StartNew ();
@@ -902,6 +908,8 @@ namespace MonoTests.System.Net.Http {
 				Console.WriteLine ($"RedirectBasicAuthServer completed HttpClient.GetAsync for {uri} with status {(int) receivedResponse.StatusCode} after {stopwatch.ElapsedMilliseconds} ms.");
 			}, out var exception);
 			Console.WriteLine ($"RedirectBasicAuthServer returned from TestRuntime.TryRunAsync for {uri}: done={done}, exception={exception?.GetType ().FullName ?? "<none>"}, elapsed={stopwatch.ElapsedMilliseconds} ms.");
+			if (!done || exception is not null)
+				server.WriteDiagnostics ();
 
 			Assert.That (done, Is.True, $"Request to {uri} timed out.");
 			Assert.That (exception, Is.Null, $"Exception while requesting {uri}.");
@@ -928,6 +936,13 @@ namespace MonoTests.System.Net.Http {
 					lock (targetAuthorizationHeadersLock)
 						return targetAuthorizationHeaders.ToArray ();
 				}
+			}
+
+			public void WriteDiagnostics ()
+			{
+				Console.WriteLine ($"RedirectBasicAuthServer origin {OriginUri}: task={originTask.Status}, exception={originTask.Exception}");
+				Console.WriteLine ($"RedirectBasicAuthServer target {TargetUri}: task={targetTask?.Status}, exception={targetTask?.Exception}");
+				Console.WriteLine ($"RedirectBasicAuthServer target requests={TargetRequestCount}, authorization headers received={TargetAuthorizationHeaders.Length}.");
 			}
 
 			public RedirectBasicAuthServer (bool crossOrigin, string username = "origin-user", string password = "origin-password")
