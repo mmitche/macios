@@ -358,6 +358,7 @@ namespace Xharness {
 					return (true, crashed, resultLine);
 				}
 			} else if (timedOut) {
+				await AppendTestLogTail (testLogPath);
 				WrenchLog.WriteLine ("AddSummary: <b><i>{0} timed out</i></b><br/>", runMode);
 				mainLog.WriteLine ("Test run timed out");
 				return (false, false, "Test run timed out");
@@ -366,6 +367,26 @@ namespace Xharness {
 				mainLog.WriteLine ("Test run crashed");
 				return (false, true, "Test run crashed");
 			}
+		}
+
+		async Task AppendTestLogTail (string testLogPath)
+		{
+			const int lineCount = 20;
+			var lines = new Queue<string> (lineCount);
+			using var reader = new StreamReader (testLogPath);
+			string? line;
+			while ((line = await reader.ReadLineAsync ()) is not null) {
+				if (lines.Count == lineCount)
+					lines.Dequeue ();
+				lines.Enqueue (line);
+			}
+
+			if (lines.Count == 0)
+				return;
+
+			mainLog.WriteLine ("Last {0} test log line(s) before timeout:", lines.Count);
+			foreach (var testLogLine in lines)
+				mainLog.WriteLine (testLogLine);
 		}
 
 		async Task GenerateXmlFailures (string failure, bool crashed, string? crashReason)
